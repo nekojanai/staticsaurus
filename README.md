@@ -9,7 +9,7 @@ import { serveStatic } from "https://deno.land/x/staticsaurus/mod.ts";
 const router = new Router();
 
 // serves all files in the $PWD/public dir
-router.get("/public", (request) => serveFile(request));
+router.get("/public/*", (request) => serveFile(request));
 
 serve(router.toHandler({}));
 ```
