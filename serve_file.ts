@@ -1,72 +1,99 @@
-import { join, parse, contentType, readAllSync } from "./deps.ts";
+import { join, parse, contentType, readAllSync, Status, STATUS_TEXT } from "./deps.ts";
+
+interface RespondWithOptions {
+  body?: BodyInit | null | undefined;
+  init?: ResponseInit | undefined;
+}
+
+function respondWith(status: Status, options?: RespondWithOptions) {
+  return new Response(options?.body, {
+    ...options?.init,
+    status,
+    statusText: STATUS_TEXT.get(status)
+  }); 
+};
+
+/**
+ * servePath - (optional) the relative path where files are served from
+ * allowedExtensions -  (optional) file extensions allowed to be served e.g. .png or .css
+ * serveHiddenFiles - (optional) set to true to serve hidden files
+ */
+export interface ServeFileOptions {
+  servePath?: string;
+  allowedExtensions?: string[];
+  serveHiddenFiles?: boolean;
+}
 
 /**
  * Gets a Request Object and tries to read the corresponding file from the file system.
- * @param request - a Request Object
- * @param servePath - (optional) the relative path where files are served from
- * @param allowedExtensions -  (optional) file extensions allowed to be served e.g. .png or .css
+ * @param request - A Request Object
+ * @param options - A ServeFileOptions Object
  * @returns A Response Object with either status 404 or 200 and the requested file
  */
 export function serveFile(
   request: Request,
-  servePath?: string,
-  allowedExtensions?: string[]
+  options?: ServeFileOptions
 ): Response {
   let path: string;
   let pathname = new URL(request.url).pathname;
   let parsedPath = parse(pathname);
 
-  if (!parsedPath.ext) {
-    return new Response(null, {
-      status: 404,
-    });
+  // check if hidden files should be served
+  if(!options?.serveHiddenFiles && parsedPath.name.startsWith(".")) {
+    return respondWith(Status.Forbidden);
   }
 
-  if (servePath) {
-    // the following removes the parts from the path that are in the serve path
+  // do not serve files without an extion TODO: make possible
+  if (!parsedPath.ext) {
+    return respondWith(Status.NotFound); 
+  }
 
+  if (options?.servePath) {
     let pathElements = parsedPath.dir.split("/");
     pathElements.shift();
     // add requested file back to path
     pathElements.push(parsedPath.base);
-    let servePathElements = servePath.split("/");
+    pathElements = pathElements.filter(el => el.trim());
+    let servePathElements = options.servePath.split("/");
     servePathElements.shift();
-    let purePath = pathElements!.filter(
-      (pathElement) => !servePathElements.includes(pathElement)
-    );
-    path = `./${join(...purePath)}`;
+    servePathElements = servePathElements.filter(el => el.trim());
+    // still allow to serve file if last directory of serve path equals first element of the request path
+    if(servePathElements[servePathElements.length-1] === pathElements[0]) pathElements.shift();
+    let fullPath = join(...servePathElements,...pathElements);
+    path = `./${decodeURIComponent(fullPath)}`;
   } else {
-    path = `.${pathname}`;
+    path = `.${decodeURIComponent(pathname)}`;
   }
 
-  if (allowedExtensions?.length) {
-    const hasForbiddenExtension = allowedExtensions?.includes(parsedPath.ext);
+  if (options?.allowedExtensions?.length) {
+    const hasForbiddenExtension = !options.allowedExtensions.includes(parsedPath.ext);
     if (hasForbiddenExtension) {
-      return new Response(null, {
-        status: 404,
-      });
+      return respondWith(Status.Forbidden)
     }
   }
 
-  let file;
+  let fileInfo: Deno.FileInfo;
+  let body: Uint8Array;
   try {
     const realPath = Deno.realPathSync(path);
-    file = Deno.openSync(realPath, { read: true });
-  } catch (error) {
-    return new Response(null, {
-      status: 404,
-    });
+    const file = Deno.openSync(realPath, { read: true });
+    fileInfo = file.statSync();
+    body = readAllSync(file);
+    file.close();
+  } catch (_) {
+    return respondWith(Status.NotFound);
   }
 
-  const fileInfo = file.statSync();
-  const data = readAllSync(file);
-  file.close();
+  
 
-  return new Response(data, {
-    status: 200,
-    headers: {
-      "content-type": contentType(parsedPath.ext)!,
-      "content-length": fileInfo.size.toString(),
-    },
+  return respondWith(Status.OK, {
+    body,
+    init: {
+      headers: {
+        "content-type": contentType(parsedPath.ext)!,
+        "content-length": fileInfo.size.toString(),
+      },
+    }
   });
+
 }
