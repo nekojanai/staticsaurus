@@ -4,7 +4,7 @@ a static file handler to be used in a [router](https://github.com/TypicalFence/b
 ```ts
 import { serve } from "https://deno.land/std@0.123.0/http/server.ts";
 import { Router } from "https://deno.land/x/brontoroutus/mod.ts";
-import { serveStatic } from "https://deno.land/x/staticsaurus/mod.ts";
+import { serveFile } from "https://deno.land/x/staticsaurus/mod.ts";
 
 const router = new Router();
 
